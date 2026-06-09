@@ -1,4 +1,4 @@
-name: OperaCleanBrowser
+name: OperaFixedStreamBrowser
 
 on:
   workflow_dispatch:
@@ -20,29 +20,32 @@ jobs:
           curl -s https://ipinfo.io/json
           echo -e "\n========================================================"
 
-      # STARTING ENHANCED OPERA CONTAINER:
-      # Deploys standard layout environment completely bypassing VPN modifications
+      # STARTING FULLY UNLOCKED OPERA CONTAINER:
+      # Added --privileged and unconfined seccomp profiles so the Selkies engine can render frames.
+      # Swapped active exposed port to 3000 for clean HTTP handshaking.
       - name: Start Isolated Opera Docker Browser
         run: |
           docker run -d \
             --name=virtual-browser \
+            --privileged \
+            --security-opt seccomp=unconfined \
             --ipc=host \
             --shm-size="8gb" \
             -e PUID=1000 \
             -e PGID=1000 \
             -e TZ=Asia/Kolkata \
-            -p 3001:3001 \
+            -p 3000:3000 \
             lscr.io/linuxserver/opera:latest
 
       # DYNAMIC HEALTH CHECK: 
-      # Actively verifies port 3001 is open before building the Cloudflare path.
-      # This stops the tunnel from hanging on "Waiting for stream..."
+      # Checking port 3000 for stability before firing up the network tunnel.
+      # This prevents the tunnel from mapping to an uninitialized application layer.
       - name: Wait for Opera Container to Ready
         run: |
-          echo "⏳ Waiting for Opera container internal services to start listening..."
+          echo "⏳ Waiting for Opera video rendering engine to start listening..."
           for i in {1..30}; do
-            if nc -z localhost 3001; then
-              echo "✅ Opera port 3001 is active and listening!"
+            if nc -z localhost 3000; then
+              echo "✅ Opera engine port 3000 is active!"
               break
             fi
             sleep 2
@@ -56,11 +59,9 @@ jobs:
           
           touch cloudflare_tunnel.log
           
-          # Stable handshake mapping to pass back the Kasm interface data
+          # Routing through port 3000 avoids backend SSL verification drops
           cloudflared tunnel \
-            --url https://127.0.0.1:3001 \
-            --no-tls-verify \
-            --http2-origin \
+            --url http://127.0.0.1:3000 \
             > cloudflare_tunnel.log 2>&1 &
 
       - name: Create Web Connection
@@ -83,7 +84,8 @@ jobs:
           echo "🎉 DOCKER VIRTUAL OPERA BROWSER RUNNING SUCCESSFULLY!"
           echo "👉 LIVE BROWSER URL: $LIVE_URL"
           echo "========================================================"
-          echo "🛡️  CLEAN TRAFFIC MODE ACTIVE: Using direct runner network parameters."
+          echo "🛡️  STREAM FIXED: If you open the link in Chrome, Edge, or"
+          echo "   any Chromium desktop browser, the interface should load instantly."
           echo "========================================================"
           
           sleep 21600
