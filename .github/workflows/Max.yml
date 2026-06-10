@@ -1,39 +1,74 @@
-name: MaxMobileMultiVpnBrowser
+name: SafeMobileMultiVpnBrowser
 
 on:
   workflow_dispatch:
 
 jobs:
-  DeployMaxBrowser:
-    name: DeployMaxBrowser
+  DeploySafeBrowser:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # PRE-LOADING EXTENSION CONFIGURATIONS
-      # This forces Chromium to automatically pull Urban VPN, SetupVPN, and VeePN from the web store at boot
+      # Pre-injecting Urban VPN, SetupVPN, and VeePN directly into the profile
       - name: Pre-Configure Extension Automation Rules
         run: |
-          echo "⚙️ Creating Chromium external extension maps..."
           mkdir -p /tmp/chrome-profile/External\ Extensions
-          
-          # 1. Urban VPN Proxy ID mapping
           echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' > '/tmp/chrome-profile/External Extensions/eppiocemhmnbduggmiononjeonpcojgo.json'
-          
-          # 2. SetupVPN Lifetime Free ID mapping
           echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' > '/tmp/chrome-profile/External Extensions/oofghmifbebeefecidnoenjegblocken.json'
-          
-          # 3. VeePN Free Proxy ID mapping
           echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' > '/tmp/chrome-profile/External Extensions/majdfhpgebeidgffmaombaddepkgocne.json'
-          
           chmod -R 777 /tmp/chrome-profile
 
-      # STARTING THE MOBILE STRIPPED CHROMIUM ENGINE
-      # App mode combined with scale-factoring stretches the page to 100% of your mobile view
+      # Start Chromium mapping the internal Web-UI port 8080 out to 8080
       - name: Start Fully Optimized Docker Browser
         run: |
+          docker run -d \
+            --name=virtual-browser \
+            --privileged \
+            --security-opt seccomp=unconfined \
+            --ipc=host \
+            --shm-size="8gb" \
+            -v /tmp/chrome-profile:/config/profile \
+            -p 8080:8080 \
+            lscr.io/linuxserver/chromium:latest
+
+      # Stronger health check mapping to port 8080 to prevent 502 Bad Gateway errors
+      - name: Wait for Chromium Display Engine to Boot
+        run: |
+          echo "⏳ Giving the display engine 15 seconds to fully initialize..."
+          sleep 15
+          for i in {1..30}; do
+            if nc -z localhost 8080; then 
+              echo "✅ Chromium Web GUI is officially live on port 8080!"
+              break 
+            fi
+            sleep 2
+          done
+
+      # Points Cloudflare directly to the working 8080 port
+      - name: Install and Initialize Cloudflare Tunnel
+        run: |
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflare-linux-amd64.deb || curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          touch cloudflare_tunnel.log
+          cloudflared tunnel --url http://127.0.0.1:8080 > cloudflare_tunnel.log 2>&1 &
+
+      - name: Create Web Connection
+        run: |
+          sleep 15
+          LIVE_URL=$(grep -o 'https://[^ ]*\.trycloudflare\.com' cloudflare_tunnel.log | head -n 1)
+          
+          echo "========================================================"
+          echo "🎉 DOCKER WORKFLOW RUNNING SAFELY!"
+          echo "👉 MOBILE LINK: $LIVE_URL"
+          echo "========================================================"
+          echo "🛠️ IF YOU SEE A BLACK SCREEN OR LOADING:"
+          echo "   - Give it up to 30 seconds to render the video feed."
+          echo "   - Open an Incognito Window inside the container to cycle views safely."
+          echo "========================================================"
+          
+          # Kept
           docker run -d \
             --name=virtual-browser \
             --privileged \
