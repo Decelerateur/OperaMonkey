@@ -20,7 +20,7 @@ jobs:
           echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' > '/tmp/chrome-profile/External Extensions/majdfhpgebeidgffmaombaddepkgocne.json'
           chmod -R 777 /tmp/chrome-profile
 
-      # Start Chromium mapping the internal Web-UI port 8080 out to 8080
+      # Start Chromium mapping the internal Web-UI port 8080 natively
       - name: Start Fully Optimized Docker Browser
         run: |
           docker run -d \
@@ -33,7 +33,6 @@ jobs:
             -p 8080:8080 \
             lscr.io/linuxserver/chromium:latest
 
-      # Stronger health check mapping to port 8080 to prevent 502 Bad Gateway errors
       - name: Wait for Chromium Display Engine to Boot
         run: |
           echo "⏳ Giving the display engine 15 seconds to fully initialize..."
@@ -46,94 +45,37 @@ jobs:
             sleep 2
           done
 
-      # Points Cloudflare directly to the working 8080 port
-      - name: Install and Initialize Cloudflare Tunnel
+      # ERROR-PROOF FIX: Pulling the direct standalone Linux binary file
+      - name: Download and Initialize Cloudflare Standalone Binary
         run: |
-          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflare-linux-amd64.deb || curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-          sudo dpkg -i cloudflared.deb
+          echo "📥 Downloading direct cloudflared binary..."
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          
+          echo "🚀 Executing live network pipeline..."
           touch cloudflare_tunnel.log
-          cloudflared tunnel --url http://127.0.0.1:8080 > cloudflare_tunnel.log 2>&1 &
+          ./cloudflared tunnel --url http://127.0.0.1:8080 > cloudflare_tunnel.log 2>&1 &
 
       - name: Create Web Connection
         run: |
           sleep 15
           LIVE_URL=$(grep -o 'https://[^ ]*\.trycloudflare\.com' cloudflare_tunnel.log | head -n 1)
           
-          echo "========================================================"
-          echo "🎉 DOCKER WORKFLOW RUNNING SAFELY!"
-          echo "👉 MOBILE LINK: $LIVE_URL"
-          echo "========================================================"
-          echo "🛠️ IF YOU SEE A BLACK SCREEN OR LOADING:"
-          echo "   - Give it up to 30 seconds to render the video feed."
-          echo "   - Open an Incognito Window inside the container to cycle views safely."
-          echo "========================================================"
-          
-          # Kept
-          docker run -d \
-            --name=virtual-browser \
-            --privileged \
-            --security-opt seccomp=unconfined \
-            --ipc=host \
-            --shm-size="8gb" \
-            -e PUID=1000 \
-            -e PGID=1000 \
-            -v /tmp/chrome-profile:/config/profile \
-            -p 3000:3000 \
-            lscr.io/linuxserver/chromium:latest \
-            --app=https://www.google.com \
-            --start-maximized \
-            --force-device-scale-factor=0.85 \
-            --disable-notifications
-
-      - name: Wait for Chromium Container to Ready
-        run: |
-          echo "⏳ Launching streaming engine components..."
-          for i in {1..30}; do
-            if nc -z localhost 3000; then
-              echo "✅ Full-Screen streaming port 3000 is active!"
-              break
-            fi
-            sleep 2
-          done
-
-      - name: Install and Initialize Cloudflare Tunnel
-        run: |
-          echo "📥 Setting up secure Cloudflare networking components..."
-          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-          sudo dpkg -i cloudflared.deb
-          
-          touch cloudflare_tunnel.log
-          
-          cloudflared tunnel \
-            --url http://127.0.0.1:3000 \
-            > cloudflare_tunnel.log 2>&1 &
-
-      - name: Create Web Connection
-        run: |
-          echo "========================================================"
-          echo "🚀 SPARKING ENGINE & INITIALIZING WEBSTREAM VIA CLOUDFLARE..."
-          echo "========================================================"
-          
-          sleep 12
-          
-          LIVE_URL=$(grep -o 'https://[^ ]*\.trycloudflare\.com' cloudflare_tunnel.log | head -n 1)
-          
           if [ -z "$LIVE_URL" ]; then
-            echo "❌ Cloudflare pipeline paused. Connection log output:"
+            echo "❌ Tunnel initialization failed. Error log dump:"
             cat cloudflare_tunnel.log
             exit 1
           fi
           
           echo "========================================================"
-          echo "🎉 DOCKER MAXIMUM VERTICAL CHROMIUM RUNNING SUCCESSFULLY!"
-          echo "👉 MOBILE ACCESS LINK: $LIVE_URL"
+          echo "🎉 FIXED! DOCKER WORKFLOW RUNNING SUCCESSFULLY!"
+          echo "👉 MOBILE LINK: $LIVE_URL"
           echo "========================================================"
-          echo "🛠️ MOBILE NAVIGATION TRICKS:"
-          echo "   - Title and address bars are 100% hidden to maximize space."
-          echo "   - Urban VPN, SetupVPN, and VeePN are already installed in the background."
-          echo "   - To open the Extension interface or type a new website address:"
-          echo "     Press 'Ctrl + N' (or use your mobile touch keyboard shortcut) to pop open"
-          echo "     a navigation overlay tab without breaking the layout environment!"
+          echo "🛠️ QUICK REMINDER FOR YOUR MOBILE VIEW:"
+          echo "   - Regular tabs are hidden to give you full screen access."
+          echo "   - To pop open a new window to view your pre-installed VPN extensions,"
+          echo "     simply tap inside the screen and press 'Ctrl + N' via your keyboard."
           echo "========================================================"
           
+          # 2 Hours safety buffer to avoid automatic system bans
           sleep 21600
